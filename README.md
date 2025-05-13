@@ -17,7 +17,7 @@ OneKeyV2 is an upgraded version of the original OneKey tool, designed to simplif
 ## Versions
 
 - OneKeyV2 (our version): `v1.00` by [TroubleGy](https://github.com/TroubleGy)
-- Original OneKey: `v1.4.7` by [ikun0014]((https://github.com/ikunshare/))
+- Original OneKey: `v1.4.7` by [ikun0014](https://github.com/ikunshare/)
 
 ---
 
@@ -78,7 +78,7 @@ See the `LICENSE` file for full license text.
 
 ## Thanks
 
-- [ikun0014]((https://github.com/ikunshare/Onekey)) for the original OneKey
+- [ikun0014](https://github.com/ikunshare/Onekey) for the original OneKey
 - GitHub and the open-source community for the libraries
 
 ---
