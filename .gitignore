@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Build tools
+build/
+dist/
+*.spec
+
+# Executables
+*.exe
+
+# Logs
+logs/
+*.log
+
+# VS Code / PyCharm
+.vscode/
+.idea/
