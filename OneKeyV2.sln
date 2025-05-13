@@ -1,0 +1,23 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.13.35931.197 d17.13
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{888888A0-9F3D-457C-B088-3A5042F75D52}") = "OneKeyV2", "OneKeyV2.pyproj", "{C1990EC4-D9C5-410A-A8A3-C146DC0177BE}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{C1990EC4-D9C5-410A-A8A3-C146DC0177BE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C1990EC4-D9C5-410A-A8A3-C146DC0177BE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {F13B9AA6-AA90-439D-8F8A-5F0B2175488F}
+	EndGlobalSection
+EndGlobal

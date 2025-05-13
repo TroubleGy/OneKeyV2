@@ -1,0 +1,5 @@
+httpx
+logzero
+ujson
+vdf
+colorama
