@@ -1,2 +1,86 @@
 # OneKeyV2
-OneKeyV2 is a modern upgrade to the original OneKey by ikun0014 – a powerful, single-file tool for unlocking Steam games via SteamTools or GreenLuma. Features built-in auto-update, automatic GitHub manifest download, Steam config patching support, and full compatibility with Windows 10/11.
+
+OneKeyV2 is an upgraded version of the original OneKey tool, designed to simplify the process of unlocking Steam games using SteamTools or GreenLuma. This project is based on the original OneKey by ikun0014, but includes stability improvements, better UX, and an auto-update system.
+
+---
+
+## Features
+
+- GitHub integration for downloading manifests and decryption keys
+- Supports both SteamTools and GreenLuma
+- Auto-update support (configurable)
+- Console + logfile logging system
+- Zero setup: `config.json` is created automatically
+
+---
+
+## Versions
+
+- OneKeyV2 (our version): `v1.00` by [TroubleGy](https://github.com/TroubleGy)
+- Original OneKey: `v1.4.7` by [ikun0014](https://ikunshare.com)
+
+---
+
+## Installation
+
+### For Users (EXE Version)
+
+1. Download `OneKeyV2.exe` from [Releases](https://github.com/TroubleGy/OnekeyV2/releases)
+2. Run it — `config.json` will be created automatically
+3. Open `config.json` and insert your GitHub Personal Token (optional, but highly recommended)
+4. Run `OneKeyV2.exe` again and follow the prompts
+
+### For Developers
+
+1. Clone the repository: git clone https://github.com/TroubleGy/OnekeyV2.git
+2. Install dependencies: pip install -r requirements.txt
+3. Run the tool: python main.py
+
+---
+
+## Configuration
+
+`config.json` will be auto-generated on first run. Below are the available options:
+
+- `Github_Personal_Token`: Optional GitHub token to avoid API rate limits
+- `Custom_Steam_Path`: Leave empty to auto-detect; or specify Steam path manually
+- `Debug_Mode`: Enables detailed console logs (`true` / `false`)
+- `Logging_Files`: Enables saving logs to `./logs` folder (`true` / `false`)
+- `Auto_Update`: Enables update checks (`true` / `false`)
+  - `Check_Interval`: How often to check in hours
+
+---
+
+## Usage
+
+1. Launch OneKeyV2
+2. Enter the Steam AppID for the game
+3. Select unlock tool (SteamTools or GreenLuma)
+4. Restart Steam and enjoy the game
+
+---
+
+## Notes
+
+- Windows 10/11 only
+- GitHub token is strongly recommended when using VPN / unstable IPs
+- Steam must be installed and unlocked using SteamTools or GreenLuma
+- Do **not** sell this tool under any circumstances
+
+---
+
+## License
+
+This project is licensed under the MIT License.  
+See the `LICENSE` file for full license text.
+
+---
+
+## Thanks
+
+- [ikun0014](https://ikunshare.com) for the original OneKey
+- GitHub and the open-source community for the libraries
+
+---
+
+Project proudly maintained by [TroubleGy](https://github.com/TroubleGy)
