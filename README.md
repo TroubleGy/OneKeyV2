@@ -11,6 +11,7 @@ OneKeyV2 is an upgraded version of the original OneKey tool, designed to simplif
 - Auto-update support (configurable)
 - Console + logfile logging system
 - Zero setup: `config.json` is created automatically
+- SteamDB integration: shows game name & SteamDB link for the given AppID
 
 ---
 
@@ -55,8 +56,10 @@ OneKeyV2 is an upgraded version of the original OneKey tool, designed to simplif
 
 1. Launch OneKeyV2
 2. Enter the Steam AppID for the game
-3. Select unlock tool (SteamTools or GreenLuma)
-4. Restart Steam and enjoy the game
+3. After entering the App ID, the program automatically detects the game's name using SteamDB API
+4. You will see the game's name and a link to its SteamDB page for verification
+5. Select unlock tool (SteamTools or GreenLuma)
+6. Restart Steam and enjoy the game
 
 ---
 
@@ -76,10 +79,11 @@ See the `LICENSE` file for full license text.
 
 ---
 
-## Thanks
+## Special Thanks
 
 - [ikun0014](https://github.com/ikunshare/Onekey) for the original OneKey
 - GitHub and the open-source community for the libraries
+- [SteamDB](https://steamdb.info/) for providing free access to Steam game metadata  
 
 ---
 
