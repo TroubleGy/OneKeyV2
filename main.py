@@ -24,7 +24,7 @@ DEFAULT_REPO = REPO_LIST[0]
 
 # Versions
 ORIGINAL_VERSION = "1.4.7"  # Original OneKey version by ikun0014
-OUR_VERSION = "1.00"        # Our OneKeyV2 version by TroubleGy
+OUR_VERSION = "1.07"        # Our OneKeyV2 version by TroubleGy
 
 
 def init() -> None:
@@ -353,13 +353,15 @@ async def check_for_updates() -> None:
 async def download_new_version(url: str):
     """Download and save updated .exe file"""
     LOG.info("Downloading latest version...")
+
     new_file = "OneKeyV2_update.exe"
+
     try:
-        r = await CLIENT.get(url, timeout=60)
+        r = await CLIENT.get(url, timeout=60, follow_redirects=True)
         r.raise_for_status()
         with open(new_file, "wb") as f:
             f.write(r.content)
-        LOG.info(f"Downloaded update: {new_file}")
+        LOG.info(f"✅ Downloaded update: {new_file}")
         LOG.info("Please close this program and manually run OneKeyV2_update.exe")
     except Exception as e:
         LOG.error(f"Update failed: {format_stack_trace(e)}")
@@ -396,7 +398,13 @@ async def main(app_id: str) -> bool:
             os.system("pause")
             return False
 
-        tool_choice = int(input("Select unlocking tool (1. SteamTools, 2. GreenLuma): "))
+        while True:
+            choice = input("Select unlocking tool (1. SteamTools, 2. GreenLuma): ").strip()
+            if choice in ["1", "2"]:
+                tool_choice = int(choice)
+                break
+            else:
+                LOG.warning("❌ Invalid input. Please enter 1 or 2.")
 
         if setup_unlock(depot_data, app_id, tool_choice, depot_map):
             LOG.info("Game unlocking configuration completed successfully!")
