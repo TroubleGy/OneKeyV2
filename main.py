@@ -122,6 +122,19 @@ async def get_latest_repo_info(repos: List[str], app_id: str, headers: Dict[str,
         raise ValueError(f"No valid repository found for app ID {app_id}")
     return selected_repo, latest_date
 
+async def get_game_name(app_id: str) -> str | None:
+    """Returns the game's name from Steam store API"""
+    url = f"https://store.steampowered.com/api/appdetails?appids={app_id}"
+    try:
+        resp = await CLIENT.get(url, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get(app_id, {}).get("success"):
+            return data[app_id]["data"]["name"]
+    except Exception as e:
+        LOG.warning(f"Failed to fetch game name: {format_stack_trace(e)}")
+    return None
+
 
 async def handle_depot_files(
     repos: List[str], app_id: str, steam_path: Path
@@ -308,13 +321,17 @@ async def check_for_updates() -> None:
         response = await CLIENT.get(url, headers=HEADER)
 
         if response.status_code == 404:
-            LOG.warning("❌ Update check: Version not found.")
+            LOG.warning("Update check: Version not found.")
             return
 
         response.raise_for_status()
         data = response.json()
 
-        latest_version = data["tag_name"].lstrip("v")  # If tag is like "v1.01"
+        raw_tag = data.get("tag_name", "")
+        latest_version = (
+            raw_tag[1:] if raw_tag.lower().startswith("v") and len(raw_tag) > 1 else raw_tag
+        )
+
         download_url = next(
             (asset["browser_download_url"] for asset in data.get("assets", []) if asset["name"].endswith(".exe")),
             None
@@ -357,6 +374,15 @@ async def main(app_id: str) -> bool:
         return False
 
     app_id = app_id_list[0]
+
+     # Fetch game name from Steam store
+    game_name = await get_game_name(app_id)
+    if game_name:
+        steamdb_url = f"https://steamdb.info/app/{app_id}/"
+        LOG.info(f"🔍 Game detected: {game_name}")
+        LOG.info(f"🔗 SteamDB page: {steamdb_url}")
+    else:
+        LOG.warning("⚠ AppID not found on Steam. Continuing anyway.")
 
     try:
         await check_location()
