@@ -7,6 +7,8 @@ from typing import Any, Tuple, List, Dict
 from pathlib import Path
 import httpx
 import vdf
+import logging
+from tkinter import END
 from common import log, variable
 from common.variable import (
     CLIENT,
@@ -17,34 +19,73 @@ from common.variable import (
     AUTO_UPDATE,
 )
 
+# Import GUI
+try:
+    from common.gui import OneKeyGUI
+    from PyQt6.QtWidgets import QApplication
+    GUI_AVAILABLE = True
+except ImportError:
+    GUI_AVAILABLE = False
+
+# Logging setup
+class CustomFormatter(logging.Formatter):
+    def format(self, record):
+        # Remove extra information from error messages
+        if record.exc_info:
+            record.exc_text = str(record.exc_info[1])
+        return super().format(record)
+
+# Create formatter with Unicode support
+formatter = CustomFormatter('%(message)s')
+
+# Configure console output with Unicode support
+console_handler = logging.StreamHandler(sys.stdout)
+console_handler.setFormatter(formatter)
+console_handler.setLevel(logging.INFO)
+
+# Configure logger
+LOG = logging.getLogger("OnekeyV2")
+LOG.setLevel(logging.INFO)
+LOG.addHandler(console_handler)
+
 # Hint: LOCK is used to prevent concurrent access to shared resources in async operations
 LOCK = asyncio.Lock()
-LOG = log.log("OnekeyV2")
 DEFAULT_REPO = REPO_LIST[0]
 
 # Versions
 ORIGINAL_VERSION = "1.4.7"  # Original OneKey version by ikun0014
-OUR_VERSION = "1.07"        # Our OneKeyV2 version by TroubleGy
+OUR_VERSION = "1.12.0"        # Our OneKeyV2 version by TroubleGy
 
+# Class for logging in GUI
+class GuiLogger:
+    def __init__(self, gui):
+        self.gui = gui
+    def info(self, msg):
+        self.gui.log(msg)
+    def warning(self, msg):
+        self.gui.log("[WARNING] " + msg)
+    def error(self, msg):
+        self.gui.log("[ERROR] " + msg)
 
-def init() -> None:
-    """Initialize console output with a banner."""
-    banner = r"""
+def get_banner_and_info() -> list:
+    banner = r'''
     _____   __   _   _____   _   _    _____  __    __ 
    /  _  \ |  \ | | | ____| | | / /  | ____| \ \  / /
    | | | | |   \| | | |__   | |/ /   | |__    \ \/ / 
    | | | | | |\   | |  __|  | |\ \   |  __|    \  /  
    | |_| | | | \  | | |___  | | \ \  | |___    / /   
    \_____/ |_|  \_| |_____| |_|  \_\ |_____|  /_/    
-    """
-    LOG.info(banner)
-    LOG.info(f"OneKeyV2 | Author: TroubleGy | Version: {OUR_VERSION} | GitHub: https://github.com/TroubleGy")
-    LOG.info(f"Based on OneKey | Original Author: ikun0014 | Original Version: {ORIGINAL_VERSION} | Website: ikunshare.com")
-    LOG.info("Project Repository: GitHub: https://github.com/TroubleGy/OnekeyV2 (coming soon)")
-    LOG.warning("TroubleGy | Reselling is strictly prohibited")
-    LOG.warning("Note: Ensure you have Windows 10/11 and Steam properly configured; SteamTools/GreenLuma")
-    LOG.warning("If using a VPN, you must configure a GitHub token, as your IP may not be trusted")
-
+    '''
+    info = [
+        banner,
+        f"OneKeyV2 | Author: TroubleGy | Version: {OUR_VERSION} | GitHub: https://github.com/TroubleGy",
+        f"Based on OneKey | Original Author: ikun0014 | Original Version: {ORIGINAL_VERSION} | Website: ikunshare.com",
+        "Project Repository: GitHub: https://github.com/TroubleGy/OneKeyV2 (coming soon)",
+        "TroubleGy | Reselling is strictly prohibited",
+        "Note: Ensure you have Windows 10/11 and Steam properly configured; SteamTools/GreenLuma",
+        "If using a VPN, you must configure a GitHub token, as your IP may not be trusted"
+    ]
+    return info
 
 async def check_location() -> bool:
     """Check if the user is located in mainland China."""
@@ -70,11 +111,8 @@ async def check_location() -> bool:
 
 
 def format_stack_trace(exception: Exception) -> str:
-    """Format the stack trace of an exception."""
-    stack_trace = traceback.format_exception(
-        type(exception), exception, exception.__traceback__
-    )
-    return "".join(stack_trace)
+    """Format the stack trace of an exception, returning only the error message."""
+    return str(exception)
 
 
 async def check_rate_limit(headers: Dict[str, str]) -> None:
@@ -134,7 +172,31 @@ async def get_game_name(app_id: str) -> str | None:
     except Exception as e:
         LOG.warning(f"Failed to fetch game name: {format_stack_trace(e)}")
     return None
+async def get_game_developers(app_id: str) -> str | None:
+    """Returns the game's developers from Steam store API"""
+    url = f"https://store.steampowered.com/api/appdetails?appids={app_id}"
+    try:
+        resp = await CLIENT.get(url, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get(app_id, {}).get("success"):
+            return data[app_id]["data"]["developers"]
+    except Exception as e:
+        LOG.warning(f"Failed to fetch game developers: {format_stack_trace(e)}")
+    return None
 
+async def get_game_publishers(app_id: str) -> str | None:
+    """Returns the game's publishers from Steam store API"""
+    url = f"https://store.steampowered.com/api/appdetails?appids={app_id}"
+    try:
+        resp = await CLIENT.get(url, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get(app_id, {}).get("success"):
+            return data[app_id]["data"]["publishers"]
+    except Exception as e:
+        LOG.warning(f"Failed to fetch game publishers: {format_stack_trace(e)}")
+    return None
 
 async def handle_depot_files(
     repos: List[str], app_id: str, steam_path: Path
@@ -203,7 +265,19 @@ async def handle_depot_files(
 
 
 async def fetch_files(sha: str, path: str, repo: str) -> bytes:
-    """Fetch files from GitHub with retry logic."""
+    """Fetch files from GitHub with retry logic.
+    
+    Args:
+        sha (str): The commit SHA to fetch from
+        path (str): The file path to fetch
+        repo (str): The repository name
+        
+    Returns:
+        bytes: The file contents
+        
+    Raises:
+        Exception: If all retries fail or if the file cannot be downloaded
+    """
     if variable.IS_CN:
         url_list = [
             f"https://cdn.jsdmirror.com/gh/{repo}@{sha}/{path}",
@@ -214,28 +288,44 @@ async def fetch_files(sha: str, path: str, repo: str) -> bytes:
     else:
         url_list = [f"https://raw.githubusercontent.com/{repo}/{sha}/{path}"]
 
-    retry_count = 3  # Hardcoded retry count
-    timeout = 30     # Hardcoded timeout
+    retry_count = CONFIG.get("network", {}).get("retry_count", 3)
+    timeout = CONFIG.get("network", {}).get("timeout", 30)
+    retry_delay = CONFIG.get("network", {}).get("retry_delay", 1)
+    last_error = None
 
     while retry_count > 0:
         for url in url_list:
             try:
+                LOG.debug(f"Attempting to fetch {path} from {url}")
                 response = await CLIENT.get(url, headers=HEADER, timeout=timeout)
                 response.raise_for_status()
-                return response.read()
+                content = response.read()
+                LOG.info(f"Successfully downloaded {path} from {url}")
+                return content
             except KeyboardInterrupt:
                 LOG.info("Program terminated by user.")
                 raise
             except httpx.ConnectError as e:
-                LOG.error(f"Failed to fetch {path}: Connection error - {str(e)}")
+                last_error = e
+                LOG.error(f"Connection error while fetching {path} from {url}: {str(e)}")
             except httpx.ConnectTimeout as e:
-                LOG.error(f"Connection timeout for {url}: {str(e)}")
+                last_error = e
+                LOG.error(f"Connection timeout while fetching {path} from {url}: {str(e)}")
+            except httpx.HTTPStatusError as e:
+                last_error = e
+                LOG.error(f"HTTP error {e.response.status_code} while fetching {path} from {url}")
+            except Exception as e:
+                last_error = e
+                LOG.error(f"Unexpected error while fetching {path} from {url}: {str(e)}")
 
         retry_count -= 1
-        LOG.warning(f"Retries remaining: {retry_count} for {path}")
+        if retry_count > 0:
+            LOG.warning(f"Retries remaining: {retry_count} for {path}")
+            await asyncio.sleep(retry_delay)
 
-    LOG.error(f"Exceeded maximum retries for {path}")
-    raise Exception(f"Unable to download {path}")
+    error_msg = f"Failed to download {path} after all retries. Last error: {str(last_error)}"
+    LOG.error(error_msg)
+    raise Exception(error_msg)
 
 
 def parse_key(content: bytes) -> List[Tuple[str, str]]:
@@ -367,93 +457,118 @@ async def download_new_version(url: str):
         LOG.error(f"Update failed: {format_stack_trace(e)}")
 
 
-async def main(app_id: str) -> bool:
-    """Main function to handle the unlocking process."""
-    app_id_list = list(filter(str.isdigit, app_id.strip().split("-")))
-    if not app_id_list:
-        LOG.error("Invalid App ID.")
-        os.system("pause")
-        return False
+async def main_gui(app_id: str, gui, stage: str):
+    if stage == "view":
+        gui.set_status("Fetching game info...", error=False)
+        if not gui.log_area.toPlainText().strip():
+             for line in get_banner_and_info():
+                LOG.info(line)
+        try:
+            app_id_list = list(filter(str.isdigit, app_id.strip().split("-")))
+            if not app_id_list:
+                LOG.error("Invalid AppID.")
+                gui.set_status("Error: Invalid AppID", error=True)
+                gui.clear_game_info()
+                gui.hide_start_button()
+                return False, None, None
 
-    app_id = app_id_list[0]
+            app_id = app_id_list[0]
+            game_name = await get_game_name(app_id)
+            game_developers = await get_game_developers(app_id)
+            game_publishers = await get_game_publishers(app_id)
 
-     # Fetch game name from Steam store
-    game_name = await get_game_name(app_id)
-    if game_name:
-        steamdb_url = f"https://steamdb.info/app/{app_id}/"
-        LOG.info(f"🔍 Game detected: {game_name}")
-        LOG.info(f"🔗 SteamDB page: {steamdb_url}")
-    else:
-        LOG.warning("⚠ AppID not found on Steam. Continuing anyway.")
+            LOG.info(f"Debug: Fetched game_name: {game_name}")
 
-    try:
-        await check_location()
-        await check_rate_limit(HEADER)
-        await check_for_updates()
+            game_info = {
+                "App ID": app_id,
+                "App Type": "Unknown",
+                "Developer": "Unknown",
+                "Publisher": "Unknown",
+                "Supported Systems": "Windows",
+                "Technologies": "Unknown",
+                "Last Changenumber": "N/A",
+                "Last Record Update": "N/A",
+                "Release Date": "N/A"
+            }
 
-        depot_data, depot_map = await handle_depot_files(REPO_LIST, app_id, STEAM_PATH)
-
-        if not depot_data or not depot_map:
-            LOG.error("No manifests found for this game.")
-            os.system("pause")
-            return False
-
-        while True:
-            choice = input("Select unlocking tool (1. SteamTools, 2. GreenLuma): ").strip()
-            if choice in ["1", "2"]:
-                tool_choice = int(choice)
-                break
+            if game_name:
+                steamdb_url = f"https://steamdb.info/app/{app_id}/"
+                LOG.info(f"Game: {game_name}")
+                LOG.info(f"SteamDB: {steamdb_url}")
+                game_info["App Type"] = "Application"
+                game_info["Game Name"] = game_name
+                if game_developers:
+                    game_info["Developers"] = game_developers
+                if game_publishers:
+                    game_info["Publishers"] = game_publishers
             else:
-                LOG.warning("❌ Invalid input. Please enter 1 or 2.")
+                LOG.warning("AppID not found on Steam. Cannot fetch detailed info.")
+                gui.set_status("Warning: AppID not found on Steam", error=False)
+                gui.clear_game_info()
+                gui.hide_start_button()
+                return False, None, None
 
-        if setup_unlock(depot_data, app_id, tool_choice, depot_map):
-            LOG.info("Game unlocking configuration completed successfully!")
-            LOG.info("Restart Steam to apply changes.")
-        else:
-            LOG.error("Configuration failed.")
+            gui.set_game_info(game_info)
+            gui.set_status("Game info fetched.", error=False)
+            return True, app_id, steamdb_url
 
-        os.system("pause")
-        return True
-    except Exception as e:
-        LOG.error(f"Runtime error: {format_stack_trace(e)}")
-        os.system("pause")
-        return False
-    except KeyboardInterrupt:
-        os.system("pause")
-        return False
-    finally:
-        await CLIENT.aclose()
+        except Exception as e:
+            LOG.error(f"Error fetching game info: {format_stack_trace(e)}")
+            gui.set_status("Error fetching info! Check logs", error=True)
+            gui.clear_game_info()
+            gui.hide_start_button()
+            return False, None, None
+
+    elif stage == "unlock":
+        gui.set_status("Starting unlock process...", error=False)
+        try:
+            app_id_list = list(filter(str.isdigit, app_id.strip().split("-")))
+            if not app_id_list:
+                 LOG.error("Invalid AppID.")
+                 gui.set_status("Error: Invalid AppID", error=True)
+                 return False, None, None
+            app_id = app_id_list[0]
+            await check_location()
+            await check_rate_limit(HEADER)
+            await check_for_updates()
+            depot_data, depot_map = await handle_depot_files(REPO_LIST, app_id, STEAM_PATH)
+
+            if not depot_data or not depot_map:
+                LOG.error("No manifests found for this game.")
+                gui.set_status("Error: No manifests found", error=True)
+                return False, None, None
+
+            tool_choice = gui.get_tool_choice()
+            if setup_unlock(depot_data, app_id, tool_choice, depot_map):
+                LOG.info("Configuration completed successfully! Restart Steam to apply changes.")
+                gui.set_status("Done!", error=False)
+                return True, app_id, None
+            else:
+                LOG.error("Configuration failed.")
+                gui.set_status("Error: Configuration failed", error=True)
+                return False, app_id, None
+        except Exception as e:
+            LOG.error(f"Error during unlock: {format_stack_trace(e)}")
+            gui.set_status("Error during unlock! Check logs", error=True)
+            return False, app_id, None
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format='%(message)s')
+
     try:
-        init()
-
-        # Try to read AppID from command-line first
-        app_id = None
-        if len(sys.argv) > 1:
-            app_id = sys.argv[1].strip()
-            LOG.info(f"App ID detected from arguments: {app_id}")
+        if GUI_AVAILABLE:
+            app = QApplication(sys.argv)
+            app.setStyle("Fusion")
+            window = OneKeyGUI(start_callback=main_gui, version=OUR_VERSION)
+            window.show()
+            sys.exit(app.exec())
         else:
-            try:
-                # Attempt to read via input()
-                app_id = input("Enter the game App ID: ").strip()
-            except Exception:
-                LOG.error("❌ Can't read App ID: No console or stdin attached.")
-                LOG.warning("💡 Solution 1: Launch via terminal")
-                LOG.warning("💡 Solution 2: Use:  OneKeyV2.exe 730")
-                os.system("pause")
-                sys.exit(1)
-
-        if not app_id:
-            LOG.error("No App ID provided.")
-            os.system("pause")
+            LOG.error("GUI is not available. Please install PyQt6: pip install PyQt6")
             sys.exit(1)
-
-        asyncio.run(main(app_id))
-
-    except (asyncio.CancelledError, KeyboardInterrupt):
-        os.system("pause")
     except Exception as e:
-        LOG.error(f"Error: {format_stack_trace(e)}")
-        os.system("pause")
+        LOG.error(f"Fatal Error: {format_stack_trace(e)}")
+        sys.exit(1)
+    finally:
+        if 'CLIENT' in locals() and not CLIENT.is_closed:
+            asyncio.run(CLIENT.aclose())
