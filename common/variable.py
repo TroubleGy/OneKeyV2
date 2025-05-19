@@ -30,7 +30,8 @@ DEFAULT_CONFIG = {
         "Enabled": True,
         "Check_Interval": 24
     },
-    "Help": "GitHub Personal Token can be generated in GitHub Settings under Developer settings."
+    "Help with GitHub Personal Token": "GitHub Personal Token can be generated in GitHub Settings under Developer settings.",
+    "Help with Custom Steam path": "Use \\ in path. For example: 'C:\\Program Files (x86)\\Steam'"
 }
 
 
