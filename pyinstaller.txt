@@ -1,1 +1,0 @@
-pyinstaller --onefile --windowed --name OneKeyV2 --icon=common/icon.ico main.py
