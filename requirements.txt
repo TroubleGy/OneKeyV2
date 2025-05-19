@@ -4,5 +4,5 @@ ujson
 vdf
 colorama
 PyQt6==6.9.0
-requests==2.31.0
+requests==2.32.2
 aiohttp==3.11.0b0
