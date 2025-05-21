@@ -172,6 +172,7 @@ async def get_game_name(app_id: str) -> str | None:
     except Exception as e:
         LOG.warning(f"Failed to fetch game name: {format_stack_trace(e)}")
     return None
+
 async def get_game_developers(app_id: str) -> str | None:
     """Returns the game's developers from Steam store API"""
     url = f"https://store.steampowered.com/api/appdetails?appids={app_id}"
@@ -197,6 +198,19 @@ async def get_game_publishers(app_id: str) -> str | None:
     except Exception as e:
         LOG.warning(f"Failed to fetch game publishers: {format_stack_trace(e)}")
     return None
+
+async def get_game_icon(app_id: str) -> bytes | None:
+    """Returns the game's icon from Steam image server"""
+    # Reverting to a smaller capsule image for potentially broader compatibility
+    url = f"https://cdn.akamai.steamstatic.com/steam/apps/{app_id}/capsule_sm_120.jpg"
+    try:
+        LOG.debug(f"Attempting to fetch game icon from {url}")
+        resp = await CLIENT.get(url, timeout=10)
+        resp.raise_for_status()
+        return resp.content
+    except Exception as e:
+        LOG.warning(f"Failed to fetch game icon for {app_id}: {format_stack_trace(e)}")
+        return None
 
 async def handle_depot_files(
     repos: List[str], app_id: str, steam_path: Path
@@ -501,6 +515,11 @@ async def main_gui(app_id: str, gui, stage: str):
                     game_info["Developers"] = game_developers
                 if game_publishers:
                     game_info["Publishers"] = game_publishers
+
+                # Fetch game icon
+                game_icon_data = await get_game_icon(app_id)
+                if game_icon_data:
+                    game_info["IconData"] = game_icon_data
             else:
                 LOG.warning("AppID not found on Steam. Cannot fetch detailed info.")
                 gui.set_status("Warning: AppID not found on Steam", error=False)
