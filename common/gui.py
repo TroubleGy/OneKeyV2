@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (
     QButtonGroup, QFrame, QSizePolicy
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QUrl, QObject
-from PyQt6.QtGui import QFont, QTextCursor, QColor, QPalette, QMouseEvent, QIcon, QLinearGradient, QPainter, QBrush
+from PyQt6.QtGui import QFont, QTextCursor, QColor, QPalette, QMouseEvent, QIcon, QLinearGradient, QPainter, QBrush, QPixmap
 import webbrowser
 import re
 import logging
@@ -384,41 +384,48 @@ class OneKeyGUI(QMainWindow):
         self.game_info_container.setStyleSheet("""
             QFrame {
                 background-color: rgba(255, 255, 255, 0.1);
+                border: 1px solid #2d2d2d;
                 border-radius: 8px;
                 padding: 15px;
             }
         """)
-        game_info_layout = QVBoxLayout(self.game_info_container)
+        self.game_info_layout = QVBoxLayout(self.game_info_container)
+
+        self.game_icon_label = QLabel()
+        self.game_icon_label.setFixedSize(350, 200)
+        self.game_icon_label.setStyleSheet("border-radius: 5px;")
+        self.game_icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.game_info_layout.addWidget(self.game_icon_label, alignment=Qt.AlignmentFlag.AlignCenter)
         
         # Game name
         self.game_name_label = QLabel("Game Name: Not specified")
         self.game_name_label.setFont(QFont(MONTSERRAT_FONT, 12))
         self.game_name_label.setStyleSheet("color: white; background: transparent;")
-        game_info_layout.addWidget(self.game_name_label)
+        self.game_info_layout.addWidget(self.game_name_label)
         
         # App ID
         self.app_id_label = QLabel("App ID: Not specified")
         self.app_id_label.setFont(QFont(MONTSERRAT_FONT, 12))
         self.app_id_label.setStyleSheet("color: white; background: transparent;")
-        game_info_layout.addWidget(self.app_id_label)
+        self.game_info_layout.addWidget(self.app_id_label)
         
         # Game developers
         self.game_developers_label = QLabel("Developers: Not specified")
         self.game_developers_label.setFont(QFont(MONTSERRAT_FONT, 12))
         self.game_developers_label.setStyleSheet("color: white; background: transparent;")
-        game_info_layout.addWidget(self.game_developers_label)
+        self.game_info_layout.addWidget(self.game_developers_label)
         
         # Game publishers
         self.game_publishers_label = QLabel("Publishers: Not specified")
         self.game_publishers_label.setFont(QFont(MONTSERRAT_FONT, 12))
         self.game_publishers_label.setStyleSheet("color: white; background: transparent;")
-        game_info_layout.addWidget(self.game_publishers_label)
+        self.game_info_layout.addWidget(self.game_publishers_label)
         
         right_layout.addWidget(self.game_info_container)
         right_layout.addStretch()
         
         # Add panels to main layout
-        main_layout.addWidget(left_panel, 2)
+        main_layout.addWidget(left_panel, 1)
         main_layout.addWidget(right_panel, 1)
         
         # Connect signals
@@ -491,6 +498,17 @@ class OneKeyGUI(QMainWindow):
             publishers_str = ", ".join(info['Publishers'])
             self.game_publishers_label.setText(f"Publishers: {publishers_str}")
             
+        # Set game icon
+        if "IconData" in info and info["IconData"]:
+            pixmap = QPixmap()
+            if pixmap.loadFromData(info["IconData"]):
+                # Масштабируем иконку, чтобы заполнить весь прямоугольник
+                self.game_icon_label.setPixmap(pixmap.scaled(self.game_icon_label.size(), Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation))
+            else:
+                self.game_icon_label.clear() # Clear if loading fails
+        else:
+            self.game_icon_label.clear() # Clear if no icon data
+
     def clear_game_info(self):
         """Clear game information"""
         self.game_name_label.setText("Game Name: Not specified")
