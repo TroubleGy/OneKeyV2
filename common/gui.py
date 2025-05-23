@@ -1,10 +1,10 @@
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QTextEdit, QRadioButton,
-    QButtonGroup, QFrame, QSizePolicy
+    QButtonGroup, QFrame, QSizePolicy, QDialog
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QUrl, QObject
-from PyQt6.QtGui import QFont, QTextCursor, QColor, QPalette, QMouseEvent, QIcon, QLinearGradient, QPainter, QBrush, QPixmap
+from PyQt6.QtGui import QFont, QTextCursor, QColor, QPalette, QMouseEvent, QIcon, QLinearGradient, QPainter, QBrush, QPixmap, QFontDatabase
 import webbrowser
 import re
 import logging
@@ -13,10 +13,220 @@ import threading
 import os
 import sys # Import sys for stream redirection
 import time # Import time for sleep
+import httpx # Import httpx here
+import ujson as json # Import json for config file handling
+from pathlib import Path # Import Path
 
-# Desired fonts (will use system default if not available)
-MONTSERRAT_FONT = 'Arial' # Set Montserrat to Arial or another common font
+# Desired fonts
+# Keep these names for internal reference if needed, but use 'Montserrat' in QSS
+MONTSERRAT_REGULAR_NAME = 'Montserrat-Regular'
+MONTSERRAT_BOLD_NAME = 'Montserrat-Bold'
 MONOSPACE_FONT = 'Consolas' # Set monospace font directly (e.g., Consolas or Courier New)
+
+# Global Stylesheet (QSS) for the dark theme
+GLOBAL_QSS = """
+QMainWindow, QDialog {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+        stop:0 #1f232a, stop:1 #1a1e24); /* Subtle dark gradient background */
+    color: #e0e0e0; /* Brighter light grey text */
+    font-family: 'Montserrat';
+    font-size: 12px;
+}
+
+QWidget#centralwidget {
+    background: transparent;
+}
+
+QWidget {
+     background-color: transparent;
+}
+
+QLabel {
+    color: #e0e0e0; /* Apply brighter text color to labels */
+    background: transparent;
+}
+
+QLineEdit {
+    padding: 8px;
+    border: 1px solid #3e4451; /* Darker border */
+    border-radius: 5px;
+    background-color: #282c34; /* Slightly lighter dark for input */
+    color: #abb2bf;
+    selection-background-color: #61afef; /* Blue selection */
+}
+
+QLineEdit:focus {
+    border: 1px solid #61afef; /* Blue accent on focus */
+    background-color: #3e4451; /* Slightly lighter on focus */
+}
+
+QPushButton {
+    padding: 10px 20px;
+    background-color: #3e4451; /* Default button dark background */
+    color: #abb2bf;
+    border: none;
+    border-radius: 5px;
+    font-weight: normal;
+    min-width: 80px;
+    outline: none; /* Remove focus outline */
+}
+
+QPushButton:hover {
+    background-color: #525a66; /* Lighter grey on hover */
+    color: #ffffff; /* White text on hover */
+}
+
+QPushButton:pressed {
+     background-color: #3e4451; /* Darker grey on pressed */
+    color: #abb2bf;
+}
+
+QPushButton:disabled {
+    background-color: #282c34; /* Darker background for disabled */
+    color: #616161; /* Grey out text */
+    border: 1px solid #3e4451;
+}
+
+/* Specific style for the primary action buttons (View, Start Unlock) */
+QPushButton#view_btn,
+QPushButton#start_btn {
+    background-color: #61afef; /* Blue background for primary buttons */
+    color: white;
+    font-weight: bold;
+}
+
+QPushButton#view_btn:hover,
+QPushButton#start_btn:hover {
+    background-color: #67b8ff;
+}
+
+QPushButton#view_btn:pressed,
+QPushButton#start_btn:pressed {
+     background-color: #519cd9;
+}
+
+/* Specific style for the secondary button (Open SteamDB) */
+QPushButton#open_steamdb_btn {
+    background-color: #3a475e; /* Slightly darker blue-grey background */
+    color: #ffffff; /* White text */
+    font-weight: normal;
+}
+
+QPushButton#open_steamdb_btn:hover {
+    background-color: #4a5d7b;
+}
+
+QPushButton#open_steamdb_btn:pressed {
+    background-color: #3a475e;
+}
+
+QRadioButton {
+    color: #abb2bf;
+    spacing: 5px;
+}
+
+QRadioButton::indicator {
+    width: 16px;
+    height: 16px;
+    border-radius: 8px;
+    border: 2px solid #3e4451; /* Dark grey border */
+    background-color: transparent;
+}
+
+QRadioButton::indicator:checked {
+    border: 2px solid #61afef; /* Blue border when checked */
+    background-color: #61afef; /* Blue fill when checked */
+}
+
+QFrame {
+    background-color: transparent;
+    border: none;
+}
+
+/* Style for container frames */
+QFrame#input_frame,
+QFrame#button_frame,
+QFrame#tool_frame,
+QFrame#game_info_container {
+    background-color: #282c34; /* Slightly lighter dark grey background for frames */
+    border-radius: 8px;
+    padding: 15px;
+    border: 1px solid #3e4451; /* Subtle border for frames */
+}
+
+/* Specific style for the title label */
+QLabel#title_label {
+    font-family: 'Montserrat';
+    font-size: 30px;
+    font-weight: bold;
+    color: #ffffff; /* White color for title */
+    qproperty-alignment: 'AlignCenter';
+    margin-bottom: 15px; /* Increased space below title */
+}
+
+/* Style for status label */
+QLabel#status_label {
+    font-size: 11px;
+    /* Color set by set_status method (which uses #4caf50 for success and #f44336 for error) */
+    margin-top: 10px;
+}
+
+/* Style for game info labels (look like input fields) */
+QLabel#game_name_label,
+QLabel#app_id_label,
+QLabel#game_developers_label,
+QLabel#game_publishers_label {
+    font-size: 12px;
+    color: #abb2bf;
+    background-color: #282c34;
+    border: 1px solid #3e4451;
+    border-radius: 5px;
+    padding: 8px;
+    margin-bottom: 8px;
+    qproperty-alignment: 'AlignLeft | AlignVCenter';
+}
+
+QLabel#game_name_label::disabled,
+QLabel#app_id_label::disabled,
+QLabel#game_developers_label::disabled,
+QLabel#game_publishers_label::disabled {
+    color: #616161; /* Dim text when info is not available */
+}
+
+/* Style for the Game Info title */
+QLabel#game_info_title {
+     font-family: 'Montserrat';
+     font-size: 20px;
+     font-weight: bold;
+     color: #ffffff; /* White color for title */
+     qproperty-alignment: 'AlignCenter';
+     margin-bottom: 10px;
+}
+
+"""
+
+# Register custom fonts
+def register_fonts():
+    fonts_dir = Path(__file__).parent.parent / "fonts"
+    logging.info(f"Attempting to load fonts from: {fonts_dir.resolve()}")
+    if fonts_dir.exists():
+        for font_file in fonts_dir.glob("*.ttf"):
+            font_id = QFontDatabase.addApplicationFont(str(font_file))
+            if font_id == -1:
+                logging.warning(f"Failed to load font: {font_file.name}")
+            else:
+                font_family = QFontDatabase.applicationFontFamilies(font_id)
+                if font_family:
+                     logging.info(f"Successfully loaded font: {font_file.name} ({font_family[0]})")
+                else:
+                     logging.info(f"Successfully loaded font: {font_file.name} (Family name not available)")
+
+    # Check if Montserrat family is available globally after loading
+    available_families = QFontDatabase.families()
+    if 'Montserrat' not in available_families:
+        logging.warning(f"Font family 'Montserrat' not found in available fonts.")
+    else:
+        logging.info(f"Font family 'Montserrat' is available.")
 
 class StreamToLog(QObject):
     """Redirects console output to the GUI log area"""
@@ -32,11 +242,12 @@ class GradientFrame(QFrame):
     """Custom frame with gradient background"""
     def __init__(self, parent=None):
         super().__init__(parent)
+        # Use a subtle dark background for the frame
         self.setStyleSheet("""
             QFrame {
                 border-radius: 10px;
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #1a237e, stop:0.5 #0d47a1, stop:1 #01579b);
+                background-color: #282c34; /* Match other container frames */
+                border: 1px solid #3e4451; /* Subtle border */
             }
         """)
 
@@ -80,8 +291,12 @@ class AsyncWorker(QThread):
         original_input = __builtins__['input']
         __builtins__['input'] = self._blocking_input
 
+        # Create httpx client within this thread's event loop
+        client = httpx.AsyncClient()
+
         try:
-            result = loop.run_until_complete(self.callback(self.appid, self.gui, self.stage))
+            # Pass the client to the callback function
+            result = loop.run_until_complete(self.callback(self.appid, self.gui, self.stage, client))
             if self.is_running:  # Only emit if thread is still running
                 self.finished.emit(*result)
         except Exception as e:
@@ -89,6 +304,8 @@ class AsyncWorker(QThread):
             if self.is_running:
                 self.finished.emit(False, None, None)
         finally:
+            # Close the client when the loop finishes
+            loop.run_until_complete(client.aclose())
             loop.close()
             # Restore built-in input
             __builtins__['input'] = original_input
@@ -103,15 +320,17 @@ class ClickableTextEdit(QTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setReadOnly(True)
+        # Updated stylesheet for dark theme and monospace font
         self.setStyleSheet(f"""
             QTextEdit {{
-                background-color: #1a1a1a;
-                color: #ffffff;
-                border: 1px solid #2d2d2d;
+                background-color: #21252b; /* Dark background for log */
+                color: #abb2bf; /* Light grey text */
+                border: 1px solid #3d3d3d; /* Darker border */
                 border-radius: 5px;
                 padding: 8px;
-                font-family: '{MONOSPACE_FONT}';
+                font-family: '{MONOSPACE_FONT}'; /* Keep monospace */
                 font-size: 12px;
+                selection-background-color: #61afef; /* Blue selection */
             }}
         """)
         self.setAcceptRichText(True)
@@ -143,6 +362,93 @@ class ClickableTextEdit(QTextEdit):
         self.setTextCursor(cursor)
         self.ensureCursorVisible()
 
+class ConfigWindow(QDialog):
+    """Window for initial configuration."""
+    config_saved = pyqtSignal(dict) # Signal to emit the saved config
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Configuration Required")
+        self.setModal(True) # Make it a modal dialog
+        self.setFixedSize(400, 250) # Slightly increased height for better spacing
+
+        # Apply global stylesheet to the config window
+        # self.setStyleSheet(GLOBAL_QSS)
+
+        layout = QVBoxLayout()
+        layout.setSpacing(15) # Increased spacing
+        layout.setContentsMargins(20, 20, 20, 20) # Increased margins
+
+        info_label = QLabel("Please configure the required settings:")
+        # Font and style applied by QSS
+        layout.addWidget(info_label)
+
+        # GitHub Token Input
+        github_layout = QVBoxLayout()
+        github_label = QLabel("GitHub Token:")
+        # Font and style applied by QSS
+        github_layout.addWidget(github_label)
+        self.github_token_input = QLineEdit()
+        self.github_token_input.setPlaceholderText("Optional, but recommended")
+        # Font and style applied by QSS
+        github_layout.addWidget(self.github_token_input)
+        layout.addLayout(github_layout)
+
+        # Custom Steam Path Input
+        steam_path_layout = QVBoxLayout()
+        steam_path_label = QLabel("Steam Path:")
+        # Font and style applied by QSS
+        steam_path_layout.addWidget(steam_path_label)
+        self.steam_path_input = QLineEdit()
+        self.steam_path_input.setPlaceholderText("Leave empty for default")
+        # Font and style applied by QSS
+        steam_path_layout.addWidget(self.steam_path_input)
+        layout.addLayout(steam_path_layout)
+
+        # Buttons
+        button_layout = QHBoxLayout()
+        self.save_button = QPushButton("Save")
+        self.cancel_button = QPushButton("Cancel")
+
+        button_layout.addStretch()
+        button_layout.addWidget(self.save_button)
+        button_layout.addWidget(self.cancel_button)
+        layout.addLayout(button_layout)
+
+        self.setLayout(layout)
+
+        # Connect signals
+        self.save_button.clicked.connect(self.save_config)
+        self.cancel_button.clicked.connect(self.reject)
+
+    def save_config(self):
+        """Saves the configuration to config.json."""
+        config_path = Path("./config.json")
+
+        # Start with default config and update with user input
+        config_data = {
+            "Github_Personal_Token": self.github_token_input.text().strip(),
+            "Custom_Steam_Path": self.steam_path_input.text().strip(),
+            "Debug_Mode": False,
+            "Logging_Files": True,
+            "Auto_Update": {
+                "Enabled": True,
+                "Check_Interval": 24
+            },
+            "Help with GitHub Personal Token": "GitHub Personal Token can be generated in GitHub Settings under Developer settings.",
+            "Help with Custom Steam path": "Use \\\\ in path. For example: 'C:\\\\Program Files (x86)\\\\Steam'"
+        }
+
+        try:
+            with config_path.open("w", encoding="utf-8") as f:
+                json.dump(config_data, f, indent=2, ensure_ascii=False)
+            logging.info("config.json saved successfully.")
+            self.config_saved.emit(config_data) # Emit the saved config
+            self.accept() # accept closes the dialog and sets result to Accepted
+        except IOError as e:
+            logging.error(f"Failed to save config file: {str(e)}")
+            # Optionally show a message box to the user about the error
+
 class OneKeyGUI(QMainWindow):
     def __init__(self, start_callback, version):
         super().__init__()
@@ -173,21 +479,25 @@ class OneKeyGUI(QMainWindow):
         
         # Set main window background to transparent
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setStyleSheet("QMainWindow { background: transparent; }")
+        # self.setStyleSheet(GLOBAL_QSS)
 
         main_layout = QHBoxLayout(main_widget)
-        main_layout.setSpacing(15)
-        main_layout.setContentsMargins(15, 15, 15, 15)
+        main_layout.setSpacing(25) # Увеличил spacing между левой и правой панелями
+        main_layout.setContentsMargins(25, 25, 25, 25) # Увеличил общие margins
         
         # Left panel (main functionality)
         left_panel = GradientFrame()
         left_layout = QVBoxLayout(left_panel)
-        left_layout.setSpacing(15)
+        left_layout.setSpacing(20) # Увеличил spacing внутри левой панели
+        left_layout.setContentsMargins(20, 20, 20, 20) # Добавил margins к левой панели
         
         # Title
         title = QLabel("OneKeyV2")
-        title.setFont(QFont(MONTSERRAT_FONT, 28, QFont.Weight.Bold))
-        title.setStyleSheet("color: white; background: transparent;")
+        title.setObjectName("title_label") # Set object name for specific styling
+        # Font applied by QSS
+        # title.setFont(QFont(MONTSERRAT_BOLD if QFontDatabase.systemFont(QFontDatabase.SystemFont.GeneralFont).family() != MONTSERRAT_BOLD else 'Arial', 28, QFont.Weight.Bold))
+        # Style applied by QSS or specific widget style
+        # title.setStyleSheet("color: white; background: transparent;")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         left_layout.addWidget(title)
         
@@ -195,31 +505,34 @@ class OneKeyGUI(QMainWindow):
         input_frame = QFrame()
         input_frame.setStyleSheet("""
             QFrame {
-                background-color: rgba(255, 255, 255, 0.1);
+                background-color: rgba(255, 255, 255, 0.05); /* Slightly transparent dark */
                 border-radius: 8px;
-                padding: 10px;
+                padding: 15px; /* Increased padding */
             }
         """)
         input_layout = QHBoxLayout(input_frame)
         
         appid_label = QLabel("Enter AppID:")
-        appid_label.setFont(QFont(MONTSERRAT_FONT, 12))
-        appid_label.setStyleSheet("color: white; background: transparent;")
+        # Font and style applied by QSS
+        # appid_label.setFont(QFont(MONTSERRAT_REGULAR if QFontDatabase.systemFont(QFontDatabase.SystemFont.GeneralFont).family() != MONTSERRAT_REGULAR else 'Arial', 12))
+        # appid_label.setStyleSheet("color: white; background: transparent;");
+
         self.appid_input = QLineEdit()
         self.appid_input.setPlaceholderText("e.g., 730 for CS2")
-        self.appid_input.setFont(QFont(MONTSERRAT_FONT, 12))
-        self.appid_input.setStyleSheet("""
-            QLineEdit {
-                padding: 8px;
-                border: 1px solid #3d3d3d;
-                border-radius: 5px;
-                background-color: rgba(255, 255, 255, 0.1);
-                color: white;
-            }
-            QLineEdit:focus {
-                border: 1px solid #00a8ff;
-            }
-        """)
+        # Font and style applied by QSS
+        # self.appid_input.setFont(QFont(MONTSERRAT_REGULAR if QFontDatabase.systemFont(QFontDatabase.SystemFont.GeneralFont).family() != MONTSERRAT_REGULAR else 'Arial', 12))
+        # self.appid_input.setStyleSheet("""
+        #     QLineEdit {
+        #         padding: 8px;
+        #         border: 1px solid #3d3d3d;
+        #         border-radius: 5px;
+        #         background-color: rgba(255, 255, 255, 0.1);
+        #         color: white;
+        #     }
+        #     QLineEdit:focus {
+        #         border: 1px solid #00a8ff;
+        #     }
+        # """)
         
         input_layout.addWidget(appid_label)
         input_layout.addWidget(self.appid_input)
@@ -229,9 +542,9 @@ class OneKeyGUI(QMainWindow):
         button_frame = QFrame()
         button_frame.setStyleSheet("""
             QFrame {
-                background-color: rgba(255, 255, 255, 0.1);
+                background-color: rgba(255, 255, 255, 0.05); /* Slightly transparent dark */
                 border-radius: 8px;
-                padding: 10px;
+                padding: 15px; /* Increased padding */
             }
         """)
         button_layout = QHBoxLayout(button_frame)
@@ -240,49 +553,38 @@ class OneKeyGUI(QMainWindow):
         self.open_steamdb_btn = QPushButton("Open SteamDB")
         self.start_btn = QPushButton("Start Unlock")
         
-        for btn in [self.view_btn, self.open_steamdb_btn, self.start_btn]:
-            btn.setFont(QFont(MONTSERRAT_FONT, 12, QFont.Weight.Bold))
-            btn.setStyleSheet("""
-                QPushButton {
-                    padding: 10px 20px;
-                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                        stop:0 #0d47a1, stop:1 #01579b);
-                    color: white;
-                    border: none;
-                    border-radius: 5px;
-                }
-                QPushButton:hover {
-                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                        stop:0 #1565c0, stop:1 #0277bd);
-                }
-                QPushButton:pressed {
-                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                        stop:0 #0a3d91, stop:1 #01579b);
-                }
-                QPushButton:disabled {
-                    background: #424242;
-                }
-            """)
-        
+        # Set object names for buttons to apply specific styles
+        self.view_btn.setObjectName("view_btn")
+        self.open_steamdb_btn.setObjectName("open_steamdb_btn")
+        self.start_btn.setObjectName("start_btn")
+
+        # Button styles applied by global QSS
+        # Ensure disabled style is not too dominant
+        # We can adjust the global QSS disabled style or apply a specific style here if needed.
+        # For now, rely on global QSS.
+
         button_layout.addWidget(self.view_btn)
         button_layout.addWidget(self.open_steamdb_btn)
         button_layout.addWidget(self.start_btn)
         
-        self.open_steamdb_btn.hide()
         self.start_btn.hide()
+        self.open_steamdb_btn.hide()
         
         left_layout.addWidget(button_frame)
         
         # Status label
         self.status_label = QLabel("Ready")
-        self.status_label.setFont(QFont(MONTSERRAT_FONT, 10))
-        self.status_label.setStyleSheet("color: #4caf50; background: transparent;")
+        self.status_label.setObjectName("status_label") # Set object name
+        # Font and style applied by QSS
+        # self.status_label.setFont(QFont(MONTSERRAT_REGULAR if QFontDatabase.systemFont(QFontDatabase.SystemFont.GeneralFont).family() != MONTSERRAT_REGULAR else 'Arial', 10))
+        # self.status_label.setStyleSheet("color: #4caf50; background: transparent;")
         left_layout.addWidget(self.status_label)
         
         # Input prompt label and buttons
         self.input_prompt_label = QLabel("Input:")
-        self.input_prompt_label.setFont(QFont(MONTSERRAT_FONT, 10))
-        self.input_prompt_label.setStyleSheet("color: white; background: transparent;")
+        # Font and style applied by QSS
+        # self.input_prompt_label.setFont(QFont(MONTSERRAT_REGULAR if QFontDatabase.systemFont(QFontDatabase.SystemFont.GeneralFont).family() != MONTSERRAT_REGULAR else 'Arial', 10))
+        # self.input_prompt_label.setStyleSheet("color: white; background: transparent;")
         self.input_prompt_label.hide()
 
         self.input_button_frame = QFrame()
@@ -290,23 +592,24 @@ class OneKeyGUI(QMainWindow):
         self.input_yes_btn = QPushButton("Yes")
         self.input_no_btn = QPushButton("No")
         
-        for btn in [self.input_yes_btn, self.input_no_btn]:
-            btn.setFont(QFont(MONTSERRAT_FONT, 10, QFont.Weight.Bold))
-            btn.setStyleSheet("""
-                QPushButton {
-                    padding: 5px 10px;
-                    background-color: #0d47a1;
-                    color: white;
-                    border: none;
-                    border-radius: 3px;
-                }
-                QPushButton:hover {
-                    background-color: #1565c0;
-                }
-                QPushButton:pressed {
-                    background-color: #0a3d91;
-                }
-            """)
+        # Button styles applied by global QSS
+        # for btn in [self.input_yes_btn, self.input_no_btn]:
+        #     btn.setFont(QFont(MONTSERRAT_BOLD if QFontDatabase.systemFont(QFontDatabase.SystemFont.GeneralFont).family() != MONTSERRAT_BOLD else 'Arial', 10, QFont.Weight.Bold))
+        #     btn.setStyleSheet("""
+        #         QPushButton {
+        #             padding: 5px 10px;
+        #             background-color: #0d47a1;
+        #             color: white;
+        #             border: none;
+        #             border-radius: 3px;
+        #         }
+        #         QPushButton:hover {
+        #             background-color: #1565c0;
+        #         }
+        #         QPushButton:pressed {
+        #             background-color: #0a3d91;
+        #         }
+        #     "")
 
         self.input_button_layout.addWidget(self.input_yes_btn)
         self.input_button_layout.addWidget(self.input_no_btn)
@@ -315,54 +618,32 @@ class OneKeyGUI(QMainWindow):
         left_layout.addWidget(self.input_prompt_label)
         left_layout.addWidget(self.input_button_frame)
 
-        # Log area
-        self.log_area = ClickableTextEdit()
-        left_layout.addWidget(self.log_area)
-        
         # Tool selection
         tool_frame = QFrame()
         tool_frame.setStyleSheet("""
             QFrame {
-                background-color: rgba(255, 255, 255, 0.1);
+                background-color: rgba(255, 255, 255, 0.05); /* Slightly transparent dark */
                 border-radius: 8px;
-                padding: 10px;
+                padding: 15px; /* Increased padding */
             }
         """)
         tool_layout = QHBoxLayout(tool_frame)
         
         tool_label = QLabel("Select tool:")
-        tool_label.setFont(QFont(MONTSERRAT_FONT, 12))
-        tool_label.setStyleSheet("color: white; background: transparent;")
+        # Font and style applied by QSS
+        # tool_label.setFont(QFont(MONTSERRAT_REGULAR if QFontDatabase.systemFont(QFontDatabase.SystemFont.GeneralFont).family() != MONTSERRAT_REGULAR else 'Arial', 12))
+        # tool_label.setStyleSheet("color: white; background: transparent;")
         
         self.tool_group = QButtonGroup()
         self.steamtools_radio = QRadioButton("SteamTools")
         self.greenluma_radio = QRadioButton("GreenLuma")
         self.steamtools_radio.setChecked(True)
-        
-        for radio in [self.steamtools_radio, self.greenluma_radio]:
-            radio.setFont(QFont(MONTSERRAT_FONT, 12))
-            radio.setStyleSheet("""
-                QRadioButton {
-                    color: white;
-                    background: transparent;
-                }
-                QRadioButton::indicator {
-                    width: 18px;
-                    height: 18px;
-                }
-                QRadioButton::indicator:unchecked {
-                    border: 2px solid #3d3d3d;
-                    border-radius: 9px;
-                    background-color: transparent;
-                }
-                QRadioButton::indicator:checked {
-                    border: 2px solid #00a8ff;
-                    border-radius: 9px;
-                    background-color: #00a8ff;
-                }
-            """)
-            self.tool_group.addButton(radio)
-        
+        self.steamtools_radio.setObjectName("steamtools_radio")
+        self.greenluma_radio.setObjectName("greenluma_radio")
+
+        self.tool_group.addButton(self.steamtools_radio)
+        self.tool_group.addButton(self.greenluma_radio)
+
         tool_layout.addWidget(tool_label)
         tool_layout.addWidget(self.steamtools_radio)
         tool_layout.addWidget(self.greenluma_radio)
@@ -371,11 +652,15 @@ class OneKeyGUI(QMainWindow):
         # Right panel (game info)
         right_panel = GradientFrame()
         right_layout = QVBoxLayout(right_panel)
+        right_layout.setSpacing(15) # Увеличил spacing внутри правой панели
+        right_layout.setContentsMargins(20, 20, 20, 20) # Добавил margins к правой панели
         
         # Game info title
         game_info_title = QLabel("Game Info")
-        game_info_title.setFont(QFont(MONTSERRAT_FONT, 20, QFont.Weight.Bold))
-        game_info_title.setStyleSheet("color: white; background: transparent;")
+        # Font and style applied by QSS
+        # game_info_title.setFont(QFont(MONTSERRAT_BOLD if QFontDatabase.systemFont(QFontDatabase.SystemFont.GeneralFont).family() != MONTSERRAT_BOLD else 'Arial', 20, QFont.Weight.Bold))
+        # game_info_title.setStyleSheet("color: white; background: transparent;")
+        game_info_title.setObjectName("game_info_title") # Set object name
         game_info_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         right_layout.addWidget(game_info_title)
         
@@ -383,10 +668,10 @@ class OneKeyGUI(QMainWindow):
         self.game_info_container = QFrame()
         self.game_info_container.setStyleSheet("""
             QFrame {
-                background-color: rgba(255, 255, 255, 0.1);
-                border: 1px solid #2d2d2d;
+                background-color: rgba(255, 255, 255, 0.05); /* Slightly transparent dark */
+                border: 1px solid #3d3d3d; /* Darker border */
                 border-radius: 8px;
-                padding: 15px;
+                padding: 15px; /* Increased padding */
             }
         """)
         self.game_info_layout = QVBoxLayout(self.game_info_container)
@@ -399,26 +684,34 @@ class OneKeyGUI(QMainWindow):
         
         # Game name
         self.game_name_label = QLabel("Game Name: Not specified")
-        self.game_name_label.setFont(QFont(MONTSERRAT_FONT, 12))
-        self.game_name_label.setStyleSheet("color: white; background: transparent;")
+        self.game_name_label.setObjectName("game_name_label") # Set object name
+        # Font and style applied by QSS
+        # self.game_name_label.setFont(QFont(MONTSERRAT_REGULAR if QFontDatabase.systemFont(QFontDatabase.SystemFont.GeneralFont).family() != MONTSERRAT_REGULAR else 'Arial', 12))
+        # self.game_name_label.setStyleSheet("color: white; background: transparent;")
         self.game_info_layout.addWidget(self.game_name_label)
         
         # App ID
         self.app_id_label = QLabel("App ID: Not specified")
-        self.app_id_label.setFont(QFont(MONTSERRAT_FONT, 12))
-        self.app_id_label.setStyleSheet("color: white; background: transparent;")
+        self.app_id_label.setObjectName("app_id_label") # Set object name
+        # Font and style applied by QSS
+        # self.app_id_label.setFont(QFont(MONTSERRAT_REGULAR if QFontDatabase.systemFont(QFontDatabase.SystemFont.GeneralFont).family() != MONTSERRAT_REGULAR else 'Arial', 12))
+        # self.app_id_label.setStyleSheet("color: white; background: transparent;")
         self.game_info_layout.addWidget(self.app_id_label)
         
         # Game developers
         self.game_developers_label = QLabel("Developers: Not specified")
-        self.game_developers_label.setFont(QFont(MONTSERRAT_FONT, 12))
-        self.game_developers_label.setStyleSheet("color: white; background: transparent;")
+        self.game_developers_label.setObjectName("game_developers_label") # Set object name
+        # Font and style applied by QSS
+        # self.game_developers_label.setFont(QFont(MONTSERRAT_REGULAR if QFontDatabase.systemFont(QFontDatabase.SystemFont.GeneralFont).family() != MONTSERRAT_REGULAR else 'Arial', 12))
+        # self.game_developers_label.setStyleSheet("color: white; background: transparent;")
         self.game_info_layout.addWidget(self.game_developers_label)
         
         # Game publishers
         self.game_publishers_label = QLabel("Publishers: Not specified")
-        self.game_publishers_label.setFont(QFont(MONTSERRAT_FONT, 12))
-        self.game_publishers_label.setStyleSheet("color: white; background: transparent;")
+        self.game_publishers_label.setObjectName("game_publishers_label") # Set object name
+        # Font and style applied by QSS
+        # self.game_publishers_label.setFont(QFont(MONTSERRAT_REGULAR if QFontDatabase.systemFont(QFontDatabase.SystemFont.GeneralFont).family() != MONTSERRAT_REGULAR else 'Arial', 12))
+        # self.game_publishers_label.setStyleSheet("color: white; background: transparent;")
         self.game_info_layout.addWidget(self.game_publishers_label)
         
         right_layout.addWidget(self.game_info_container)
@@ -523,11 +816,15 @@ class OneKeyGUI(QMainWindow):
             return
             
         self.set_status("Fetching game info...", error=False)
-        self.log_area.clear()
+        # Disable all action buttons at the start of an operation
         self.view_btn.setEnabled(False)
+        self.start_btn.setEnabled(False)
+        self.open_steamdb_btn.setEnabled(False)
+
+        # Hide Start Unlock and Open SteamDB buttons initially for new view
         self.hide_start_button()
         self.hide_open_steamdb_button()
-        
+
         worker = AsyncWorker(self.start_callback, appid, self, "view")
         self.workers.append(worker)  # Add to workers list
         worker.finished.connect(self.handle_view_result)
@@ -542,62 +839,71 @@ class OneKeyGUI(QMainWindow):
             return
             
         self.set_status("Starting unlock process...", error=False)
-        self.start_btn.setEnabled(False)
+        # Disable all action buttons at the start of an operation
         self.view_btn.setEnabled(False)
-        self.hide_open_steamdb_button()
+        self.start_btn.setEnabled(False)
+        self.open_steamdb_btn.setEnabled(False)
         
         worker = AsyncWorker(self.start_callback, appid, self, "unlock")
-        self.workers.append(worker)  # Add to workers list
+        self.workers.append(worker)
         worker.finished.connect(self.handle_unlock_result)
-        # Connect worker's input request to GUI slot
         worker.request_input.connect(self.request_worker_input)
         worker.start()
         
-    def on_open_steamdb(self):
-        if self.steamdb_url:
-            webbrowser.open(self.steamdb_url)
-        else:
-            self.set_status("SteamDB URL not available!", error=True)
-            
     def handle_view_result(self, success, appid, steamdb_url):
+        # Enable View button after operation finishes
         self.view_btn.setEnabled(True)
+
         # Ensure buttons are re-enabled after input if it happened
         self.input_prompt_label.hide()
         self.input_button_frame.hide()
 
         if success:
+            # If view is successful, show and enable Start Unlock and Open SteamDB buttons
             self.show_start_button()
-            if steamdb_url:
-                self.steamdb_url = steamdb_url
-                self.show_open_steamdb_button()
+            self.start_btn.setEnabled(True)
+            if steamdb_url: # Only show and enable Open SteamDB if URL is available
+                 self.steamdb_url = steamdb_url # Store URL
+                 self.show_open_steamdb_button()
+                 self.open_steamdb_btn.setEnabled(True)
             else:
-                self.hide_open_steamdb_button()
+                 self.hide_open_steamdb_button()
+                 self.open_steamdb_btn.setEnabled(False)
+
         else:
+            # If view failed, hide and disable Start Unlock and Open SteamDB buttons
             self.hide_start_button()
+            self.start_btn.setEnabled(False)
             self.hide_open_steamdb_button()
-            
+            self.open_steamdb_btn.setEnabled(False)
+
     def handle_unlock_result(self, success, appid, steamdb_url):
+        # Enable View button after operation finishes
         self.view_btn.setEnabled(True)
+
         # Ensure buttons are re-enabled after input if it happened
         self.input_prompt_label.hide()
         self.input_button_frame.hide()
 
+        # After unlock, the user might want to view another game.
+        # Hide Start Unlock and Open SteamDB buttons and rely on a new View operation
+        # to make them visible/enabled again.
         self.hide_start_button()
+        self.start_btn.setEnabled(False)
         self.hide_open_steamdb_button()
-        
+        self.open_steamdb_btn.setEnabled(False)
+
+        # If you wanted Start Unlock to be available immediately after unlock for the *same* game:
+        # self.show_start_button()
+        # self.start_btn.setEnabled(True)
+        # self.hide_open_steamdb_button() # Keep Open SteamDB hidden after unlock
+
     def set_status(self, text, error=False):
         self.status_label.setText(text)
         self.status_label.setStyleSheet(
             f"color: {'#f44336' if error else '#4caf50'}; background: transparent;"
         )
         
-    # This log method is no longer used for writing to the log_area directly
-    # The StreamToLog class and append_log methods handle writing now.
-    # Keeping it here for compatibility with GuiLogger, but it will effectively do nothing.
-    def log(self, text):
-        # The GuiLogger will call this, but the actual appending is done by StreamToLog
-        pass
-
     def get_tool_choice(self):
         return 1 if self.steamtools_radio.isChecked() else 2
         
@@ -606,9 +912,17 @@ class OneKeyGUI(QMainWindow):
         
     def hide_start_button(self):
         self.start_btn.hide()
-        
+
+    # Return the methods for showing/hiding Open SteamDB button
     def show_open_steamdb_button(self):
         self.open_steamdb_btn.show()
-        
+
     def hide_open_steamdb_button(self):
         self.open_steamdb_btn.hide()
+
+    # Return the method for Open SteamDB button click
+    def on_open_steamdb(self):
+        if self.steamdb_url:
+            webbrowser.open(self.steamdb_url)
+        else:
+            self.set_status("SteamDB URL not available!", error=True)
