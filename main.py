@@ -54,7 +54,7 @@ DEFAULT_REPO = REPO_LIST[0]
 
 # Versions
 ORIGINAL_VERSION = "1.4.7"  # Original OneKey version by ikun0014
-OUR_VERSION = "1.12.0"        # Our OneKeyV2 version by TroubleGy
+OUR_VERSION = "1.13.0"        # Our OneKeyV2 version by TroubleGy
 
 # Class for logging in GUI
 class GuiLogger:
